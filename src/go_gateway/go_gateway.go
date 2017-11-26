@@ -27,21 +27,18 @@ func main() {
     }	
 }
 
-
-func getHandler(w http.ResponseWriter, r *http.Request) {
-    key := r.URL.Query().Get("key")
-    jsonBody := fmt.Sprintf("{\"operation\": \"get\", \"key\": \"%s\"}", key)
-    corrId := randomString(32)
-
-    conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+func connectMQ() (conn *amqp.Connection, ch *amqp.Channel){
+	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
-	defer conn.Close()
 
-	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
-	defer ch.Close()
+	ch, errr := conn.Channel()
+	failOnError(errr, "Failed to open a channel")
 
- 	q, err := ch.QueueDeclare(
+	return
+}
+
+func declareQueue(ch *amqp.Channel) (q amqp.Queue){
+	q, err := ch.QueueDeclare(
   		"",    // name
   		false, // durable
   		false, // delete when usused
@@ -51,8 +48,22 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 	)
 
   	failOnError(err, "Failed to register a queue")	
+  	return
+}
 
- 	err = ch.Publish(
+
+func getHandler(w http.ResponseWriter, r *http.Request) {
+    key := r.URL.Query().Get("key")
+    jsonBody := fmt.Sprintf("{\"operation\": \"get\", \"key\": \"%s\"}", key)
+    corrId := randomString(32)
+
+    conn, ch := connectMQ()
+	defer conn.Close()
+	defer ch.Close()
+
+ 	q := declareQueue(ch);
+
+ 	err := ch.Publish(
 	"",          // exchange
 	"rpc_queue", // routing key
 	false,       // mandatory
@@ -95,26 +106,13 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
  	jsonBody := fmt.Sprintf("{\"operation\": \"set\", \"key\": \"%s\", \"value\": \"%s\"}", key, value)  
  	corrId := randomString(32)
 
- 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-	failOnError(err, "Failed to connect to RabbitMQ")
+    conn, ch := connectMQ()
 	defer conn.Close()
-
-	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
- 	q, err := ch.QueueDeclare(
-  		"",    // name
-  		false, // durable
-  		false, // delete when usused
-  		true,  // exclusive
-  		false, // noWait
-  		nil,   // arguments
-	)
+ 	q := declareQueue(ch);
 
-  	failOnError(err, "Failed to register a consumer")	
-
- 	err = ch.Publish(
+ 	err := ch.Publish(
 	"",          // exchange
 	"rpc_queue", // routing key
 	false,       // mandatory
@@ -132,26 +130,13 @@ func keysHandler(w http.ResponseWriter, r *http.Request) {
     jsonBody := fmt.Sprintf("{\"operation\": \"keys\"}")
     corrId := randomString(32)
 
-    conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-	failOnError(err, "Failed to connect to RabbitMQ")
+    conn, ch := connectMQ()
 	defer conn.Close()
-
-	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
- 	q, err := ch.QueueDeclare(
-  		"",    // name
-  		false, // durable
-  		false, // delete when usused
-  		true,  // exclusive
-  		false, // noWait
-  		nil,   // arguments
-	)
+ 	q := declareQueue(ch);	
 
-  	failOnError(err, "Failed to register a queue")	
-
- 	err = ch.Publish(
+ 	err := ch.Publish(
 	"",          // exchange
 	"rpc_queue", // routing key
 	false,       // mandatory
