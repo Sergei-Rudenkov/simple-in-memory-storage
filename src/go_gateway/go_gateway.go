@@ -29,7 +29,64 @@ func main() {
 
 
 func getHandler(w http.ResponseWriter, r *http.Request) {
-    //key := r.URL.Query().Get("key")
+    key := r.URL.Query().Get("key")
+    jsonBody := fmt.Sprintf("{\"operation\": \"get\", \"key\": \"%s\"}", key)
+    corrId := randomString(32)
+
+    conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	failOnError(err, "Failed to connect to RabbitMQ")
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	failOnError(err, "Failed to open a channel")
+	defer ch.Close()
+
+ 	q, err := ch.QueueDeclare(
+  		"",    // name
+  		false, // durable
+  		false, // delete when usused
+  		true,  // exclusive
+  		false, // noWait
+  		nil,   // arguments
+	)
+
+  	failOnError(err, "Failed to register a queue")	
+
+ 	err = ch.Publish(
+	"",          // exchange
+	"rpc_queue", // routing key
+	false,       // mandatory
+	false,       // immediate
+	amqp.Publishing{
+		ContentType:   "text/plain",
+		CorrelationId: corrId,
+		ReplyTo:       q.Name,
+		Body:          []byte(jsonBody),
+		})
+	failOnError(err, "Failed to publish a message") 
+
+	msgs, err := ch.Consume(
+		q.Name, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	failOnError(err, "Failed to register a consumer")
+
+	response_chan := make(chan string)
+
+	go func() {
+		for d := range msgs {
+			if corrId == d.CorrelationId {
+				response_chan <- fmt.Sprintf("%s: %s", key, string(d.Body)) 
+				break
+			}
+		}
+	}()
+	fmt.Fprintf(w, <- response_chan)
 }
 
 func setHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +129,63 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func keysHandler(w http.ResponseWriter, r *http.Request) {
-    
+    jsonBody := fmt.Sprintf("{\"operation\": \"keys\"}")
+    corrId := randomString(32)
+
+    conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	failOnError(err, "Failed to connect to RabbitMQ")
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	failOnError(err, "Failed to open a channel")
+	defer ch.Close()
+
+ 	q, err := ch.QueueDeclare(
+  		"",    // name
+  		false, // durable
+  		false, // delete when usused
+  		true,  // exclusive
+  		false, // noWait
+  		nil,   // arguments
+	)
+
+  	failOnError(err, "Failed to register a queue")	
+
+ 	err = ch.Publish(
+	"",          // exchange
+	"rpc_queue", // routing key
+	false,       // mandatory
+	false,       // immediate
+	amqp.Publishing{
+		ContentType:   "text/plain",
+		CorrelationId: corrId,
+		ReplyTo:       q.Name,
+		Body:          []byte(jsonBody),
+		})
+	failOnError(err, "Failed to publish a message") 
+
+	msgs, err := ch.Consume(
+		q.Name, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	failOnError(err, "Failed to register a consumer")
+
+	response_chan := make(chan string)
+
+	go func() {
+		for d := range msgs {
+			if corrId == d.CorrelationId {
+				response_chan <- string(d.Body) 
+				break
+			}
+		}
+	}()
+	fmt.Fprintf(w, <- response_chan)
 }
 
 func randomString(l int) string {
