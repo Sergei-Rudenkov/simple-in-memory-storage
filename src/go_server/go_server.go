@@ -1,4 +1,5 @@
 package main
+
 import (
 	"log"
     "strconv"
@@ -7,7 +8,7 @@ import (
 	"encoding/json"
 	"zvelo.io/ttlru"
 	"time"
-	//"reflect"
+	"mqBuilder"
 )
 
 func failOnError(err error, msg string) {
@@ -23,40 +24,17 @@ type Request struct {
 }
 
 func main() {
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-	failOnError(err, "Failed to connect to RabbitMQ")
+	conn, ch := mqBuilder.ConnectMQ()
 	defer conn.Close()
-
-	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
-	q, err := ch.QueueDeclare(
-		"rpc_queue", // name
-		false,   // durable
-		false,   // delete when unused
-		false,   // exclusive
-		false,   // no-wait
-		nil,     // arguments
-	)
-	failOnError(err, "Failed to declare a queue")
+	q := mqBuilder.DeclareServerQueue(ch, "rpc_queue")
 
-	msgs, err := ch.Consume(
-		q.Name, // queue
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	failOnError(err, "Failed to register a consumer")
+	msgs := mqBuilder.ConsumeQueue(ch, q.Name)
 
 	forever := make(chan bool)
 
 	cache := ttlru.New(100, ttlru.WithTTL(5 * time.Minute))
-
-	//log.Println(reflect.TypeOf(ch))	
 
 	for d := range msgs {    
     	go hitCache(cache, d)
@@ -76,38 +54,17 @@ func hitCache(cache ttlru.Cache, d amqp.Delivery) {
 
 	switch data.Operation {
     	case "get":
-    		conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-			failOnError(err, "Failed to connect to RabbitMQ")
-		//	defer conn.Close()
-
-			ch, err := conn.Channel()
-			failOnError(err, "Failed to open a channel")
-		//	defer ch.Close()
-
-			failOnError(err, "Failed to declare a queue")
+    		_, ch := mqBuilder.ConnectMQ()
 
        		value, succ := cache.Get(data.Key)
 			log.Printf(strconv.FormatBool(succ))
 			log.Printf(value.(string))
-			err = ch.Publish(
-				"",        // exchange
-				d.ReplyTo, // routing key
-				false,     // mandatory
-				false,     // immediate
-				amqp.Publishing{
-					ContentType:   "text/plain",
-					CorrelationId: d.CorrelationId,
-					Body:          []byte(value.(string)),
-			})
-			failOnError(err, "Failed to publish a message")
-    	case "set":
+			mqBuilder.PublishQueue(ch, d.ReplyTo, "", d.CorrelationId, value.(string))
+    	case "set", "update":
        		succ := cache.Set(data.Key, data.Value)
        		log.Printf(data.Key)
 			log.Printf(strconv.FormatBool(succ))
        		log.Printf(strconv.Itoa(cache.Len()))
-       	case "update":
-       		succ := cache.Set(data.Key, data.Value)	
-       		log.Printf(strconv.FormatBool(succ))
        	case "remove":
        		succ := cache.Del(data.Key)
        		log.Printf(strconv.FormatBool(succ))
@@ -117,27 +74,11 @@ func hitCache(cache ttlru.Cache, d amqp.Delivery) {
 			for i, v := range keys {
     			string_keys[i] = fmt.Sprint(v)
 			}
-       		conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-			failOnError(err, "Failed to connect to RabbitMQ")
-			defer conn.Close()
-
-			ch, err := conn.Channel()
-			failOnError(err, "Failed to open a channel")
-			defer ch.Close()
+       		_, ch := mqBuilder.ConnectMQ()
 
 			failOnError(err, "Failed to declare a queue")
 
-			err = ch.Publish(
-				"",        // exchange
-				d.ReplyTo, // routing key
-				false,     // mandatory
-				false,     // immediate
-				amqp.Publishing{
-					ContentType:   "text/plain",
-					CorrelationId: d.CorrelationId,
-					Body:          []byte(fmt.Sprintf("%#v\n", string_keys)),
-			})
-			failOnError(err, "Failed to publish a message")
+			mqBuilder.PublishQueue(ch, d.ReplyTo, "", d.CorrelationId, fmt.Sprintf("%#v\n", string_keys))
        	default:
        		log.Printf("Unknown operation: %s", data.Operation)	
    	} 	

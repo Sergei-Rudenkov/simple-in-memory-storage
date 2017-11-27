@@ -4,9 +4,10 @@ import (
     "net/http"
     "log"
     "fmt"
-    "github.com/streadway/amqp"
+    _ "github.com/streadway/amqp"
     "math/rand"
     "time"
+    "mqBuilder"
 )
 
 
@@ -22,70 +23,24 @@ func main() {
     http.HandleFunc("/set", setHandler)
     http.HandleFunc("/keys", keysHandler)
     err := http.ListenAndServe(":9090", nil) 
-    if err != nil {
-        log.Fatal("ListenAndServe: ", err)
-    }	
+
+    failOnError(err, "Failed to ListenAndServe")
 }
-
-func connectMQ() (conn *amqp.Connection, ch *amqp.Channel){
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-	failOnError(err, "Failed to connect to RabbitMQ")
-
-	ch, errr := conn.Channel()
-	failOnError(errr, "Failed to open a channel")
-
-	return
-}
-
-func declareQueue(ch *amqp.Channel) (q amqp.Queue){
-	q, err := ch.QueueDeclare(
-  		"",    // name
-  		false, // durable
-  		false, // delete when usused
-  		true,  // exclusive
-  		false, // noWait
-  		nil,   // arguments
-	)
-
-  	failOnError(err, "Failed to register a queue")	
-  	return
-}
-
 
 func getHandler(w http.ResponseWriter, r *http.Request) {
     key := r.URL.Query().Get("key")
     jsonBody := fmt.Sprintf("{\"operation\": \"get\", \"key\": \"%s\"}", key)
     corrId := randomString(32)
 
-    conn, ch := connectMQ()
+    conn, ch := mqBuilder.ConnectMQ()
 	defer conn.Close()
 	defer ch.Close()
 
- 	q := declareQueue(ch);
+ 	q := mqBuilder.DeclareClientQueue(ch);
 
- 	err := ch.Publish(
-	"",          // exchange
-	"rpc_queue", // routing key
-	false,       // mandatory
-	false,       // immediate
-	amqp.Publishing{
-		ContentType:   "text/plain",
-		CorrelationId: corrId,
-		ReplyTo:       q.Name,
-		Body:          []byte(jsonBody),
-		})
-	failOnError(err, "Failed to publish a message") 
+ 	mqBuilder.PublishQueue(ch, "rpc_queue", q.Name, corrId, jsonBody)
 
-	msgs, err := ch.Consume(
-		q.Name, // queue
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	failOnError(err, "Failed to register a consumer")
+	msgs := mqBuilder.ConsumeQueue(ch, q.Name) 
 
 	response_chan := make(chan string)
 
@@ -106,59 +61,28 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
  	jsonBody := fmt.Sprintf("{\"operation\": \"set\", \"key\": \"%s\", \"value\": \"%s\"}", key, value)  
  	corrId := randomString(32)
 
-    conn, ch := connectMQ()
+    conn, ch := mqBuilder.ConnectMQ()
 	defer conn.Close()
 	defer ch.Close()
 
- 	q := declareQueue(ch);
+ 	q := mqBuilder.DeclareClientQueue(ch);
 
- 	err := ch.Publish(
-	"",          // exchange
-	"rpc_queue", // routing key
-	false,       // mandatory
-	false,       // immediate
-	amqp.Publishing{
-		ContentType:   "text/plain",
-		CorrelationId: corrId,
-		ReplyTo:       q.Name,
-		Body:          []byte(jsonBody),
-		})
-	failOnError(err, "Failed to publish a message")   
+ 	mqBuilder.PublishQueue(ch, "rpc_queue", q.Name, corrId, jsonBody)
 }
 
 func keysHandler(w http.ResponseWriter, r *http.Request) {
     jsonBody := fmt.Sprintf("{\"operation\": \"keys\"}")
     corrId := randomString(32)
 
-    conn, ch := connectMQ()
+    conn, ch := mqBuilder.ConnectMQ()
 	defer conn.Close()
 	defer ch.Close()
 
- 	q := declareQueue(ch);	
+ 	q := mqBuilder.DeclareClientQueue(ch);	
 
- 	err := ch.Publish(
-	"",          // exchange
-	"rpc_queue", // routing key
-	false,       // mandatory
-	false,       // immediate
-	amqp.Publishing{
-		ContentType:   "text/plain",
-		CorrelationId: corrId,
-		ReplyTo:       q.Name,
-		Body:          []byte(jsonBody),
-		})
-	failOnError(err, "Failed to publish a message") 
+ 	mqBuilder.PublishQueue(ch, "rpc_queue", q.Name, corrId, jsonBody)
 
-	msgs, err := ch.Consume(
-		q.Name, // queue
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	failOnError(err, "Failed to register a consumer")
+ 	msgs := mqBuilder.ConsumeQueue(ch, q.Name)
 
 	response_chan := make(chan string)
 
