@@ -1,8 +1,8 @@
 package mqBuilder
 
 import (
-    "log"
-    "github.com/streadway/amqp"
+    	"log"
+    	"github.com/streadway/amqp"
 )
 
 func failOnError(err error, msg string) {
@@ -71,9 +71,22 @@ func PublishQueue(ch *amqp.Channel, routing_key string, q_Name string, corrId st
 			CorrelationId: corrId,
 			ReplyTo:       q_Name,
 			Body:          []byte(jsonBody),
-			})
+	})
 	failOnError(err, "Failed to publish a message") 	
 }
+
+func PublishExchange(ch *amqp.Channel, exchange_name string, jsonBody string) {
+	err := ch.Publish(
+  		exchange_name, // exchange
+  		"",     // routing key
+  		false,  // mandatory
+  		false,  // immediate
+  		amqp.Publishing{
+        	ContentType: "text/plain",
+          	Body:        []byte(jsonBody),
+  	})
+  	failOnError(err, "Failed to publish a message") 
+}	
 
 func ConsumeQueue(ch *amqp.Channel, q_Name string) (<- chan amqp.Delivery) {
 	msgs, err := ch.Consume(

@@ -1,13 +1,13 @@
 package main
 
 import (
-    "net/http"
-    "log"
-    "fmt"
-    _ "github.com/streadway/amqp"
-    "math/rand"
-    "time"
-    "mqBuilder"
+   	"net/http"
+    	"log"
+    	"fmt"
+    	"github.com/streadway/amqp"
+   	"math/rand"
+    	"time"
+    	"mqBuilder"
 )
 
 
@@ -19,20 +19,20 @@ func failOnError(err error, msg string) {
 
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
-    http.HandleFunc("/get", getHandler)
-    http.HandleFunc("/set", setHandler)
-    http.HandleFunc("/keys", keysHandler)
-    err := http.ListenAndServe(":9090", nil) 
+    	http.HandleFunc("/get", getHandler)
+    	http.HandleFunc("/set", setHandler)
+    	http.HandleFunc("/keys", keysHandler)
+    	err := http.ListenAndServe(":9090", nil) 
 
-    failOnError(err, "Failed to ListenAndServe")
+    	failOnError(err, "Failed to ListenAndServe")
 }
 
 func getHandler(w http.ResponseWriter, r *http.Request) {
-    key := r.URL.Query().Get("key")
-    jsonBody := fmt.Sprintf("{\"operation\": \"get\", \"key\": \"%s\"}", key)
-    corrId := randomString(32)
+    	key := r.URL.Query().Get("key")
+    	jsonBody := fmt.Sprintf("{\"operation\": \"get\", \"key\": \"%s\"}", key)
+    	corrId := randomString(32)
 
-    conn, ch := mqBuilder.ConnectMQ()
+    	conn, ch := mqBuilder.ConnectMQ()
 	defer conn.Close()
 	defer ch.Close()
 
@@ -59,22 +59,40 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
  	key := r.FormValue("key")
  	value := r.FormValue("value")
  	jsonBody := fmt.Sprintf("{\"operation\": \"set\", \"key\": \"%s\", \"value\": \"%s\"}", key, value)  
- 	corrId := randomString(32)
 
-    conn, ch := mqBuilder.ConnectMQ()
+    	conn, ch := mqBuilder.ConnectMQ()
 	defer conn.Close()
 	defer ch.Close()
 
- 	q := mqBuilder.DeclareClientQueue(ch);
+	err := ch.ExchangeDeclare(
+		"post_ex",   // name
+		"fanout", // type
+		true,     // durable
+		false,    // auto-deleted
+		false,    // internal
+		false,    // no-wait
+		nil,      // arguments
+	)
+	failOnError(err, "Failed to declare an exchange")
 
- 	mqBuilder.PublishQueue(ch, "rpc_queue", q.Name, corrId, jsonBody)
+	err = ch.Publish(
+		"post_ex", // exchange
+		"",     // routing key
+		false,  // mandatory
+		false,  // immediate
+		amqp.Publishing{
+			ContentType: "text/plain",
+			Body:        []byte(jsonBody),
+		})
+	failOnError(err, "Failed to publish a message")
+	
 }
 
 func keysHandler(w http.ResponseWriter, r *http.Request) {
-    jsonBody := fmt.Sprintf("{\"operation\": \"keys\"}")
-    corrId := randomString(32)
+    	jsonBody := fmt.Sprintf("{\"operation\": \"keys\"}")
+    	corrId := randomString(32)
 
-    conn, ch := mqBuilder.ConnectMQ()
+    	conn, ch := mqBuilder.ConnectMQ()
 	defer conn.Close()
 	defer ch.Close()
 
