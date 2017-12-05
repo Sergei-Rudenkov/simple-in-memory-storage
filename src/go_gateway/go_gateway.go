@@ -1,11 +1,11 @@
 package main
 
 import (
-   	"net/http"
-    	"log"
+	"net/http"
+	"log"
     	"fmt"
-    	"github.com/streadway/amqp"
-   	"math/rand"
+    	_ "github.com/streadway/amqp"
+    	"math/rand"
     	"time"
     	"mqBuilder"
 )
@@ -60,32 +60,12 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
  	value := r.FormValue("value")
  	jsonBody := fmt.Sprintf("{\"operation\": \"set\", \"key\": \"%s\", \"value\": \"%s\"}", key, value)  
 
-    	conn, ch := mqBuilder.ConnectMQ()
+	conn, ch := mqBuilder.ConnectMQ()
 	defer conn.Close()
 	defer ch.Close()
 
-	err := ch.ExchangeDeclare(
-		"post_ex",   // name
-		"fanout", // type
-		true,     // durable
-		false,    // auto-deleted
-		false,    // internal
-		false,    // no-wait
-		nil,      // arguments
-	)
-	failOnError(err, "Failed to declare an exchange")
-
-	err = ch.Publish(
-		"post_ex", // exchange
-		"",     // routing key
-		false,  // mandatory
-		false,  // immediate
-		amqp.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(jsonBody),
-		})
-	failOnError(err, "Failed to publish a message")
-	
+	mqBuilder.DeclareExchange(ch, "post_ex", "fanout")
+	mqBuilder.PublishExchange(ch, "post_ex", jsonBody)
 }
 
 func keysHandler(w http.ResponseWriter, r *http.Request) {

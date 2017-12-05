@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"strconv"
+    	"strconv"
     	"fmt"
 	"github.com/streadway/amqp"
 	"encoding/json"
@@ -18,9 +18,9 @@ func failOnError(err error, msg string) {
 }
 
 type Request struct {
-    	Operation string          `json:"operation"`
-    	Key string 	          `json:"key"`
-    	Value string		  `json:"value"`
+    	Operation string  	`json:"operation"`
+    	Key string 		`json:"key"`
+    	Value string		`json:"value"`
 }
 
 func main() {
@@ -42,29 +42,11 @@ func main() {
     		}
     	}()
 
+    	mqBuilder.DeclareExchange(ch, "post_ex", "fanout")
+	
+   	qSet := mqBuilder.DeclareServerQueue(ch, "")
 
-   	 err := ch.ExchangeDeclare(
-		"post_ex",// name
-		"fanout", // type
-		true,     // durable
-		false,    // auto-deleted
-		false,    // internal
-		false,    // no-wait
-		nil,      // arguments
-	)
-	failOnError(err, "Failed to declare an exchange")
-
-	qSet, err := ch.QueueDeclare(
-		"",    // name
-		false, // durable
-		false, // delete when unused
-		false, // exclusive
-		false, // no-wait
-		nil,   // arguments
-	)
-	failOnError(err, "Failed to declare a queue")
-
-	err = ch.QueueBind(
+	err := ch.QueueBind(
 		qSet.Name, // queue name
 		"",        // routing key
 		"post_ex", // exchange
@@ -72,20 +54,11 @@ func main() {
 		nil)
 	failOnError(err, "Failed to bind a queue")
 
-	msgsSet, err := ch.Consume(
-		qSet.Name, // queue
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	failOnError(err, "Failed to register a consumer")
+	msgsSet := mqBuilder.ConsumeQueue(ch, qSet.Name)
 
 	go func() { 
 		for d := range msgsSet {    
-	    		go hitCache(cache, d)
+    			go hitCache(cache, d)
     		}
     	}()	
 
@@ -107,8 +80,13 @@ func hitCache(cache ttlru.Cache, d amqp.Delivery) {
 
        		value, succ := cache.Get(data.Key)
 		log.Printf(strconv.FormatBool(succ))
-		log.Printf(value.(string))
-		mqBuilder.PublishQueue(ch, d.ReplyTo, "", d.CorrelationId, value.(string))
+		if response, ok := value.(string); ok {
+			log.Printf(value.(string))
+    			mqBuilder.PublishQueue(ch, d.ReplyTo, "", d.CorrelationId, response)	
+		}else{
+			log.Printf("null")
+			mqBuilder.PublishQueue(ch, d.ReplyTo, "", d.CorrelationId, "null")
+		}
     	case "set", "update":
        		succ := cache.Set(data.Key, data.Value)
        		log.Printf(data.Key)
@@ -120,9 +98,9 @@ func hitCache(cache ttlru.Cache, d amqp.Delivery) {
        	case "keys":
        		keys := cache.Keys()
        		string_keys := make([]string, len(keys))
-			for i, v := range keys {
+		for i, v := range keys {
     			string_keys[i] = fmt.Sprint(v)
-			}
+		}
        		_, ch := mqBuilder.ConnectMQ()
 
 		failOnError(err, "Failed to declare a queue")

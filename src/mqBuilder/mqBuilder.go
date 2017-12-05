@@ -1,7 +1,7 @@
 package mqBuilder
 
 import (
-    	"log"
+	"log"
     	"github.com/streadway/amqp"
 )
 
@@ -9,17 +9,6 @@ func failOnError(err error, msg string) {
 	if err != nil {
 		log.Fatalf("%s: %s", msg, err)
 	}
-}
-
-type QueueInfo struct{
-	q_Name string
-	routing_key string
-	ch *amqp.Channel
-} 
-
-type RequestResponseInfo struct{
-	corrId string
-	jsonBody string	
 }
 
 func ConnectMQ() (conn *amqp.Connection, ch *amqp.Channel){
@@ -30,6 +19,19 @@ func ConnectMQ() (conn *amqp.Connection, ch *amqp.Channel){
 	failOnError(errr, "Failed to open a channel")
 
 	return
+}
+
+func DeclareExchange(ch *amqp.Channel, name string, exchange_type string) {
+	err := ch.ExchangeDeclare(
+		name,   // name
+		exchange_type, // type
+		true,     // durable
+		false,    // auto-deleted
+		false,    // internal
+		false,    // no-wait
+		nil,      // arguments
+	)
+	failOnError(err, "Failed to declare an exchange")
 }
 
 func DeclareClientQueue(ch *amqp.Channel) (q amqp.Queue){
